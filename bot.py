@@ -2,6 +2,7 @@ import sys
 import logging
 import concurrent.futures
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,14 +17,15 @@ from telegram.error import BadRequest
 from telegram.request import HTTPXRequest
 from mega import Mega
 
-# Logging
+# Logging Setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# States
+# Conversation States
 EMAIL, PASSWORD = range(2)
 
+# CONFIGURATION (Yahan apni sahi details dalein)
 BOT_TOKEN = "8834810654:AAFBaOn6k-9CXheg-qmDlLmWSy81gyO87xQ"
-UPDATE_CHANNEL = "@NEWSBYLAILA"  # <--- Yahan apne channel ka username dalein (Include @)
+UPDATE_CHANNEL = "@NEWSBYLAILA"  # Include @, blank rkhne ke liye "" kar dein
 
 # --- DUMMY SERVER FOR RENDER PORT CHECK ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -33,10 +35,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Bot is Running Perfectly on Web Service!")
     def log_message(self, format, *args):
-        return  # Render ke faltu logs console mein rokne ke liye
+        return  # Render ke logs clean rakhne ke liye
 
 def run_health_check():
-    # Render default port 10000 use karta hai web service ke liye
+    # Render Free Web Service default 10000 port scan karti hai
     server = HTTPServer(('0.0.0.0', 10000), HealthCheckHandler)
     server.serve_forever()
 
@@ -57,7 +59,6 @@ async def is_user_subbed(bot, user_id: int) -> bool:
 
 async def send_force_join_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     channel_url = f"https://t.me/{UPDATE_CHANNEL.replace('@', '')}"
-    
     keyboard = [
         [InlineKeyboardButton("📢 Join Channel", url=channel_url)],
         [InlineKeyboardButton("🔄 Try Again", callback_data="check_again")]
@@ -72,8 +73,6 @@ async def send_force_join_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if update.message:
         await update.message.reply_text(msg_text, reply_markup=reply_markup)
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(msg_text, reply_markup=reply_markup)
 
 # --- BOT HANDLERS ---
 
@@ -101,8 +100,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚀 Welcome to **Fast Global Bulk Renamer Bot**.\n"
         "Yeh bot aapke MEGA cloud drive ki hazaaron files ko kuch hi seconds mein ek sath rename kar sakta hai!\n\n"
         "⚡ **Bot Features:**\n"
-        "• 50 High-Speed Multi-Threaded Workers (Max Performance).\n"
-        "• Optimized live progress updates.\n"
+        "• 30 Optimized Multi-Threaded Workers (Stable Speed).\n"
+        "• Anti-Freeze Live Progress System.\n"
         "• Super fast and secure text replacing.\n\n"
         "📋 **How to Use:**\n"
         "1. Pehle **/login** command bhejkar apna MEGA drive connect karein.\n"
@@ -113,42 +112,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not await is_user_subbed(context.bot, user_id):
         await send_force_join_msg(update, context)
         return ConversationHandler.END
 
     if 'email' in context.user_data:
         await update.message.reply_text(
-            f"ℹ️ Aap pehle se `{context.user_data['email']}` account se logged in hain.\n\n"
+            f"ℹ️ Aap pehle se `{context.user_data['email']}` account se logged in hain.\n"
             f"Naye account ke liye pehle **/logout** command bhejein."
         )
         return ConversationHandler.END
         
-    await update.message.reply_text(
-        "🔒 **MEGA.nz Login Setup**\n\nEnter your MEGA.nz email address to link account:"
-    )
+    await update.message.reply_text("🔒 **MEGA.nz Login Setup**\n\nEnter your MEGA.nz email address to link account:")
     return EMAIL
 
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not await is_user_subbed(context.bot, user_id):
-        await send_force_join_msg(update, context)
-        return ConversationHandler.END
-
     context.user_data['email'] = update.message.text.strip()
     await update.message.reply_text("🔑 Now, enter your MEGA password:")
     return PASSWORD
 
 async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not await is_user_subbed(context.bot, user_id):
-        await send_force_join_msg(update, context)
-        return ConversationHandler.END
-
     password = update.message.text.strip()
     email = context.user_data['email']
-    
     status_msg = await update.message.reply_text("🔄 Logging in and indexing your MEGA Drive (Fast Mode)...")
     
     try:
@@ -157,15 +142,8 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         all_nodes = m.get_files()
         
         context.user_data['password'] = password
-        
-        total_files = 0
-        total_folders = 0
-        
-        for node_id, node_data in all_nodes.items():
-            if node_data.get('t') == 1:
-                total_folders += 1
-            elif node_data.get('t') == 0:
-                total_files += 1
+        total_files = sum(1 for n in all_nodes.values() if n.get('t') == 0)
+        total_folders = sum(1 for n in all_nodes.values() if n.get('t') == 1)
 
         await status_msg.edit_text(
             f"✅ **Connected & Indexed Successfully!**\n\n"
@@ -176,7 +154,6 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👉 `/replace old_text new_text`"
         )
         return ConversationHandler.END
-        
     except Exception as e:
         await status_msg.edit_text(f"❌ Login failed: {str(e)}\n\nSend /login to try again.")
         context.user_data.clear()
@@ -198,7 +175,6 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     find_text = str(context.args[0])
     replace_text = str(context.args[1])
-    
     if replace_text.lower() == "blank":
         replace_text = ""
         
@@ -213,7 +189,6 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         all_nodes = m.get_files()
         
         matching_nodes = []
-        
         for node_id, node_data in all_nodes.items():
             if node_data.get('t') == 0:
                 current_name = node_data.get('a', {}).get('n', '')
@@ -225,10 +200,11 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await progress_msg.edit_text(f"❌ Poore drive par kisi bhi file mein '{find_text}' nahi mila!")
             return
             
-        await progress_msg.edit_text(f"⏳ Found {total_matches} files. Renaming in progress with 50 Workers...")
+        await progress_msg.edit_text(f"⏳ Found {total_matches} files. Renaming in progress with 30 Stable Workers...")
         
         rename_count = 0
         processed_count = 0
+        last_edit_time = time.time()  # Non-blocking live progress tracking
 
         def rename_single_file(node_info):
             n_id, n_data, curr_name = node_info
@@ -239,8 +215,8 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 return False
 
-        # Max Workers badha kar 50 kiya hua hai high speed bulk renames ke liye
-        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        # Fixed to 30 Workers for safe and superfast execution on free hosting
+        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
             future_to_node = {executor.submit(rename_single_file, node): node for node in matching_nodes}
             
             for future in concurrent.futures.as_completed(future_to_node):
@@ -248,14 +224,17 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if future.result():
                     rename_count += 1
                 
-                # Performance optimize karne ke liye ab har 25 processed files ke baad edit karega
-                if processed_count % 25 == 0 or processed_count == total_matches:
+                # Anti-freeze rule: Message sirf har 5 seconds mein ek baar edit hoga
+                current_time = time.time()
+                if current_time - last_edit_time >= 5.0 or processed_count == total_matches:
                     try:
                         await progress_msg.edit_text(
-                            f"⚡ **Live Progress (50 Workers):**\n"
+                            f"⚡ **Turbo Progress (30 Workers):**\n"
                             f"🔄 Processed: {processed_count}/{total_matches} files...\n"
-                            f"✅ Successfully Renamed: {rename_count}"
+                            f"✅ Successfully Renamed: {rename_count}\n\n"
+                            f"🚀 Status: Background threads running seamlessly..."
                         )
+                        last_edit_time = current_time
                     except Exception:
                         pass
                         
@@ -272,17 +251,13 @@ async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'email' in context.user_data:
         old_email = context.user_data['email']
         context.user_data.clear()
-        await update.message.reply_text(
-            f"🔒 **Logged Out Successfully!**\n\n"
-            f"Account `{old_email}` ka data clear ho gaya hai.\n"
-            f"Naye account ke liye /login karein."
-        )
+        await update.message.reply_text(f"🔒 **Logged Out!**\n\nAccount `{old_email}` data cleared.")
     else:
         await update.message.reply_text("ℹ️ Aap pehle se hi logged out hain!")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ Session closed. Logged out securely.")
+    await update.message.reply_text("❌ Session closed safely.")
     return ConversationHandler.END
 
 def main():
@@ -290,9 +265,9 @@ def main():
         print("[-] Error: Token add karein!")
         sys.exit(1)
 
-    # Web service ka port status true karne ke liye dummy web-server thread start karein
+    # Start dummy port checker thread for Render Web Service compatibility
     threading.Thread(target=run_health_check, daemon=True).start()
-    print("[+] Dummy Web Port Server successfully started on port 10000 for Render...")
+    print("[+] Dummy Port Web Server successfully started on port 10000...")
 
     custom_request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
     app = Application.builder().token(BOT_TOKEN).request(custom_request).post_init(post_init).build()
@@ -306,12 +281,13 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
+    # Concurrency control: block=False handles multiple users without bottleneck
     app.add_handler(conv_handler)
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CommandHandler('replace', replace_command))
-    app.add_handler(CommandHandler('logout', logout_command))
+    app.add_handler(CommandHandler('start', start, block=False))
+    app.add_handler(CommandHandler('replace', replace_command, block=False))
+    app.add_handler(CommandHandler('logout', logout_command, block=False))
     
-    print("[+] Fast Global Bot running with 50 Workers & Free Web Service compatibility...")
+    print("[+] Fast Global Bulk Renamer Bot successfully loaded!")
     app.run_polling()
 
 if __name__ == '__main__':

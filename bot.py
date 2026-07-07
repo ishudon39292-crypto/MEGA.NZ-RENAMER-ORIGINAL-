@@ -20,7 +20,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # States
 EMAIL, PASSWORD = range(2)
 
-BOT_TOKEN = "8834810654:AAGWWGXWr28cjSibWZWt1HnyVC-0FQrrqU0"
+BOT_TOKEN = "8834810654:AAFBaOn6k-9CXheg-qmDlLmWSy81gyO87xQ"
 UPDATE_CHANNEL = "@NEWSBYLAILA"  # <--- Yahan apne channel ka username dalein (Include @)
 
 # --- FORCE JOIN CHECK FUNCTION ---

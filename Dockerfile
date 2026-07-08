@@ -20,4 +20,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 7. Gunicorn web server aur aapka python command dono ek sath chalane ke liye
-CMD gunicorn app:app & python3 main.py
+CMD gunicorn app:app & python3 bot.py

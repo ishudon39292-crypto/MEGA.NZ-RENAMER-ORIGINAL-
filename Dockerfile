@@ -1,7 +1,7 @@
 # 1. Python ka naya stable version use karenge (Debian Bookworm)
 FROM python:3.10-slim-bookworm
 
-# 2. System updates aur FFmpeg install karenge (Isme 404 error nahi aayega)
+# 2. System updates aur FFmpeg install karenge (Renamer bots ke liye zaroori hai)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
@@ -19,5 +19,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 6. Poora code container mein copy karenge
 COPY . .
 
-# 7. Gunicorn web server aur aapka python command dono ek sath chalane ke liye
-CMD gunicorn app:app & python3 bot.py
+# 7. Optimized Gunicorn configuration (3 Workers + 4 Threads) aur Bot dono ek sath chalane ke liye
+CMD gunicorn --workers=3 --threads=4 -b 0.0.0.0:10000 app:app & python3 bot.py

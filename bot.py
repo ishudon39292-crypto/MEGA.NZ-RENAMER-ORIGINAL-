@@ -25,8 +25,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 EMAIL, PASSWORD = range(2)
 
 # Configuration Constants
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
-UPDATE_CHANNEL = "@NEWSBYLAILA"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL")
 
 # Dynamic Multi-User Parallel Engine Execution Pools
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=100)

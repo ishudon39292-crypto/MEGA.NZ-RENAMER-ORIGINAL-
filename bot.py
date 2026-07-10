@@ -20,11 +20,12 @@ from telegram.ext import (
 from telegram.error import BadRequest, TelegramError
 from telegram.request import HTTPXRequest
 
-if not hasattr(asyncio, 'coroutine'):
-    import types
-    def dummy_coroutine(f):
-        return f
-    asyncio.coroutine = dummy_coroutine
+# Python 3.14+ compatibility patch without breaking properties
+try:
+    if not hasattr(asyncio, 'coroutine'):
+        asyncio.coroutine = lambda f: f
+except Exception:
+    pass
 
 from mega import Mega
 
@@ -34,23 +35,31 @@ EMAIL, PASSWORD = range(2)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
 UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "@NEWSBYLAILA")
-ADMIN_ID = 8474134621  # <--- Apni ID check kar lena bhai
+ADMIN_ID = 123456789  # <--- Apni ID check kar lena bhai
 
 USER_DB_FILE = "users.txt"
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 ACTIVE_TASKS = {}
 
-# --- DUMMY WEB SERVER FOR RENDER & UPTIME ROBOT ---
-class HealthCheckServer(BaseHTTPRequestHandler):
+# --- FIXED WEB SERVER FOR RENDER & UPTIME ROBOT (RETURNS 200 OK EVERYTIME) ---
+class RenderHealthServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/html")
+        self.send_header("Content-type", "text/plain")
         self.end_headers()
-        self.wfile.write(b"Bot is Alive and Running 24/7!")
+        self.wfile.write(b"OK - Bot Engine Online")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return  # Server logs clean rakhne ke liye
 
 def run_health_server():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckServer)
+    server = HTTPServer(("0.0.0.0", port), RenderHealthServer)
     logging.info(f"[+] Render Web Server started on port {port}")
     server.serve_forever()
 
@@ -136,7 +145,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     welcome_text = (
         f"👋 <b>Hello, {name}!</b>\n\n"
-        "🚀 <b>MEGA BULK RENAMER v2.4</b>\n"
+        "🚀 <b>MEGA BULK RENAMER v2.6</b>\n"
         "⚡ <i>Cloud Hyper Turbo Engine Connected (Render Platform)</i>\n\n"
         "<code>┌──────────────────────────┐\n"
         "  • /login      - Connect MEGA Drive\n"
@@ -471,7 +480,7 @@ def main():
         print("[!] ERROR: BOT_TOKEN is missing or not set!")
         sys.exit(1)
 
-    # Start Render Port Server in separate thread
+    # Start FIXED HTTP Web Server 
     server_thread = threading.Thread(target=run_health_server, daemon=True)
     server_thread.start()
 

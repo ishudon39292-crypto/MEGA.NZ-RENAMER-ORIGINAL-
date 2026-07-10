@@ -32,9 +32,9 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 EMAIL, PASSWORD = range(2)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8834810654:AAFBaOn6k-9CXheg-qmDlLmWSy81gyO87xQ)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
 UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "@NEWSBYLAILA")
-ADMIN_ID = 8474134621  # <--- Apni ID check kar lena bhai
+ADMIN_ID = 123456789  # <--- Apni ID check kar lena bhai
 
 USER_DB_FILE = "users.txt"
 GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)

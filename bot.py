@@ -39,7 +39,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
 UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "@NEWSBYLAILA")
 
 # 👑 ADMIN SYSTEM SETUP
-ADMIN_ID = 123456789  # <--- IS NUMBER KO APNI ID SE BADLEIN
+ADMIN_ID = 8474134621  # <--- IS NUMBER KO APNI ID SE BADLEIN
 
 # Text file to store user IDs database locally in Termux / Render
 USER_DB_FILE = "users.txt"

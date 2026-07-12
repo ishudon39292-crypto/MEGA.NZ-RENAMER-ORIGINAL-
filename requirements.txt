@@ -1,0 +1,6 @@
+python-telegram-bot==22.8
+mega.py==1.0.8
+httpx==0.28.1
+requests>=0.10
+pycryptodome
+tenacity

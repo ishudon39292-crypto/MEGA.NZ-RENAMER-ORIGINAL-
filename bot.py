@@ -5,8 +5,6 @@ import random
 import time
 import asyncio
 import os
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -20,60 +18,76 @@ from telegram.ext import (
 from telegram.error import BadRequest, TelegramError
 from telegram.request import HTTPXRequest
 
-# Python 3.14+ compatibility patch without breaking properties
-try:
-    if not hasattr(asyncio, 'coroutine'):
-        asyncio.coroutine = lambda f: f
-except Exception:
-    pass
+# Python 3.13 asyncio.coroutine compatibility patch for older tenacity/mega versions
+if not hasattr(asyncio, 'coroutine'):
+    import types
+    def dummy_coroutine(f):
+        return f
+    asyncio.coroutine = dummy_coroutine
 
 from mega import Mega
+from h11 import Response
 
+# Logging Setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# Conversation States for Login Workflow
 EMAIL, PASSWORD = range(2)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN_HERE")
+# --- Configuration Constants ---
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8834810654:AAFBaOn6k-9CXheg-qmDlLmWSy81gyO87xQ)
 UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "@NEWSBYLAILA")
-ADMIN_ID = 123456789  # <--- Apni ID check kar lena bhai
 
+# 👑 ADMIN SYSTEM SETUP
+ADMIN_ID = 8474134621  # <--- IS NUMBER KO APNI ID SE BADLEIN
+
+# Text file to store user IDs database locally in Termux / Render
 USER_DB_FILE = "users.txt"
-GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+# Dynamic Multi-User Parallel Engine Execution Pools
+GLOBAL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=100)
 ACTIVE_TASKS = {}
 
-# --- FIXED WEB SERVER FOR RENDER & UPTIME ROBOT (RETURNS 200 OK EVERYTIME) ---
-class RenderHealthServer(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"OK - Bot Engine Online")
+# --- DUMMY WEB SERVER FOR RENDER 24/7 ALIVE HACK ---
+async def handle_ping(reader, writer):
+    """Render ke port request ko standard HTTP response dekar zinda rakhne ke liye"""
+    raw_request = await reader.read(1024)
+    response = (
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html\r\n"
+        "Content-Length: 26\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "<h1>MEGA Renamer Is Live</h1>"
+    )
+    writer.write(response.encode('utf-8'))
+    await writer.drain()
+    writer.close()
+    await writer.wait_closed()
 
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        return  # Server logs clean rakhne ke liye
-
-def run_health_server():
+async def start_web_server():
+    """Render mandatory port mapping setup"""
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), RenderHealthServer)
-    logging.info(f"[+] Render Web Server started on port {port}")
-    server.serve_forever()
+    server = await asyncio.start_server(handle_ping, "0.0.0.0", port)
+    logging.info(f"🌐 [RENDER SHIELD] Dummy Web Portal Active On Port: {port}")
+    async with server:
+        await server.serve_forever()
 
+# --- ADMIN VERIFICATION CHECK ---
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
+# --- USER DB MANAGEMENT FUNCTIONS ---
 def add_user_to_db(user_id: int):
     user_id_str = str(user_id)
     if not os.path.exists(USER_DB_FILE):
         with open(USER_DB_FILE, "w") as f:
             f.write(user_id_str + "\n")
         return
+    
     with open(USER_DB_FILE, "r") as f:
         users = f.read().splitlines()
+    
     if user_id_str not in users:
         with open(USER_DB_FILE, "a") as f:
             f.write(user_id_str + "\n")
@@ -84,6 +98,7 @@ def get_total_users() -> list:
     with open(USER_DB_FILE, "r") as f:
         return f.read().splitlines()
 
+# --- FORCE JOIN VERIFICATION ---
 async def is_user_subbed(bot, user_id: int) -> bool:
     if not UPDATE_CHANNEL:
         return True
@@ -98,20 +113,22 @@ async def send_force_join_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     keyboard = [[InlineKeyboardButton("📢 Join Channel to Unlock", url=channel_url)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     msg_text = (
-        "👑 <b>Premium Access Locked</b>\n\n"
+        "👑 <b>Premium Access Locked!</b>\n\n"
         f"Is high-speed advanced renamer bot ko use karne ke liye hamare official network channel <code>{UPDATE_CHANNEL}</code> ko join karein."
     )
     if update.message:
         await update.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="HTML")
 
+# --- PREMIUM DYNAMIC PROGRESS BAR ---
 def make_progress_bar(done, total=100):
     if total == 0:
         total = 100
     percentage = min(int((done / total) * 100), 100)
     block = int(percentage / 10)
     bar = "💎" * block + "░" * (10 - block)
-    return f"<code>{bar}</code> <b>{percentage}%</b>"
+    return f"<code>{bar}</code>  <b>{percentage}%</b>"
 
+# --- MATHEMATICAL TIME FORMATTER ---
 def format_time(seconds):
     if seconds is None or seconds < 0:
         return "Calculating..."
@@ -121,6 +138,7 @@ def format_time(seconds):
     secs = int(seconds % 60)
     return f"{minutes}m {secs}s"
 
+# --- BOT INTERFACE COMMANDS CONFIG ---
 async def post_init(application: Application) -> None:
     commands = [
         BotCommand("start", "🚀 Bot ka welcome menu dekhein"),
@@ -142,21 +160,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_force_join_msg(update, context)
         return
 
-    name = update.effective_user.first_name
     welcome_text = (
-        f"👋 <b>Hello, {name}!</b>\n\n"
-        "🚀 <b>MEGA BULK RENAMER v2.6</b>\n"
-        "⚡ <i>Cloud Hyper Turbo Engine Connected (Render Platform)</i>\n\n"
-        "<code>┌──────────────────────────┐\n"
-        "  • /login      - Connect MEGA Drive\n"
-        "  • /replace    - Replace Specific Text\n"
-        "  • /fullrename - Overwrite All Names\n"
-        "  • /logout     - Disconnect Drive\n"
-        "└──────────────────────────┘</code>\n\n"
+        f"👋 <b>Hello, {update.effective_user.first_name}!</b>\n\n"
+        "🚀 <b>Fast Global Bulk Renamer Bot (Premium Engine)</b>.\n"
+        "Ab yeh bot dynamic time prediction, premium diamond bar aur non-blocking multi-user tech par chalta hai!\n\n"
         "📋 <b>How to Use:</b>\n"
-        "1. Pehle <code>/login</code> bhejkar drive connect karein.\n"
-        "2. Text badalne ke liye: <code>/replace purana naya</code>\n"
-        "3. Saari files rename karne ke liye: <code>/fullrename naya</code>"
+        "1. Pehle <code>/login</code> command bhejkar apna MEGA drive connect karein.\n"
+        "2. Text badalne ke liye: <code>/replace purana_naam naya_naam</code>\n"
+        "3. Drive ki saari files ka ek naam karne ke liye bhejye: <code>/fullrename naya_naam</code>"
     )
     await update.message.reply_text(welcome_text, parse_mode="HTML")
 
@@ -175,17 +186,17 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not update.message.reply_to_message:
-        await update.message.reply_text("⚠️ <b>Format:</b> Kisi bhi message ko reply karke <code>/broadcast</code> likhein.", parse_mode="HTML")
+        await update.message.reply_text("⚠️ <b>Format:</b> Reply to a message with <code>/broadcast</code>", parse_mode="HTML")
         return
 
     broadcast_msg = update.message.reply_to_message
     all_users = get_total_users()
     
     if not all_users:
-        await update.message.reply_text("❌ Database mein koi user nahi mila.", parse_mode="HTML")
+        await update.message.reply_text("❌ Database empty.", parse_mode="HTML")
         return
 
-    status_msg = await update.message.reply_text("📢 <b>Broadcasting started to users...</b>", parse_mode="HTML")
+    status_msg = await update.message.reply_text(f"📢 <b>Broadcasting starting...</b>", parse_mode="HTML")
     success, failed = 0, 0
     
     for uid in all_users:
@@ -203,6 +214,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+# --- LOGIN STEP-BY-STEP CONVERSATION WORKFLOW ---
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_user_subbed(context.bot, user_id):
@@ -210,16 +222,15 @@ async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if 'mega_instance' in context.user_data:
-        email_clean = context.user_data.get('email')
-        await update.message.reply_text(f"ℹ️ Aap pehle se <code>{email_clean}</code> account se logged in hain.", parse_mode="HTML")
+        await update.message.reply_text(f"ℹ️ Already logged in as <code>{context.user_data.get('email')}</code>.", parse_mode="HTML")
         return ConversationHandler.END
 
-    await update.message.reply_text("🔒 <b>MEGA.nz Login Setup</b>\n\nEnter your MEGA.nz email address:", parse_mode="HTML")
+    await update.message.reply_text("🔒 <b>MEGA.nz Login</b>\n\nEnter your email:", parse_mode="HTML")
     return EMAIL
 
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['temp_email'] = update.message.text.strip()
-    await update.message.reply_text("🔑 Now, enter your MEGA password:", parse_mode="HTML")
+    await update.message.reply_text("🔑 Enter password:", parse_mode="HTML")
     return PASSWORD
 
 def bg_login(email, password):
@@ -232,7 +243,7 @@ def bg_login(email, password):
 async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     password = update.message.text.strip()
     email = context.user_data.get('temp_email')
-    status_msg = await update.message.reply_text("🔐 <b>Establishing Secure SSL Connection to MEGA...</b>", parse_mode="HTML")
+    status_msg = await update.message.reply_text("🔐 <b>Connecting to MEGA...</b>", parse_mode="HTML")
 
     try:
         loop = asyncio.get_running_loop()
@@ -243,16 +254,13 @@ async def get_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['total_files'] = total_files
 
         await status_msg.edit_text(
-            "<code>┌──────────────────────────┐\n"
-            "  ✅ CONNECTED SUCCESSFULLY\n"
-            "└──────────────────────────┘</code>\n\n"
+            f"✅ <b>Connected Successfully!</b>\n\n"
             f"📧 <b>Account:</b> <code>{email}</code>\n"
-            f"📦 <b>Total Files Indexed:</b> <code>{total_files}</code>\n\n"
-            "👉 Ab aap direct <code>/replace</code> ya <code>/fullrename</code> use kar sakte hain!",
+            f"📦 <b>Indexed:</b> <code>{total_files}</code> files",
             parse_mode="HTML"
         )
     except Exception as e:
-        await status_msg.edit_text(f"❌ <b>Login Matrix Failed:</b> {str(e)}", parse_mode="HTML")
+        await status_msg.edit_text(f"❌ <b>Login Failed:</b> {str(e)}", parse_mode="HTML")
 
     if 'temp_email' in context.user_data:
         del context.user_data['temp_email']
@@ -264,8 +272,9 @@ async def cancel_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     if query.data.startswith("cancel_"):
         task_id = query.data.split("_")[1]
         ACTIVE_TASKS[task_id] = False
-        await query.message.edit_text("🛑 <b>Termination signal sent to engine. Stopping tasks...</b>", parse_mode="HTML")
+        await query.message.edit_text("🛑 <b>Termination signal sent. Stopping engine...</b>", parse_mode="HTML")
 
+# --- CORE PARALLEL TEXT REPLACER PIPELINE ---
 def core_replace_engine(m, find_text, replace_text, msg_id, chat_id, bot, loop, task_key):
     try:
         start_time = time.time()
@@ -277,7 +286,7 @@ def core_replace_engine(m, find_text, replace_text, msg_id, chat_id, bot, loop, 
         ]
 
         if not matching_nodes:
-            asyncio.run_coroutine_threadsafe(bot.edit_message_text("❌ <b>Engine Report:</b> No target text matching found inside drive.", chat_id, msg_id, parse_mode="HTML"), loop)
+            asyncio.run_coroutine_threadsafe(bot.edit_message_text("❌ No matching files found.", chat_id, msg_id, parse_mode="HTML"), loop)
             return
 
         rename_count = 0
@@ -285,77 +294,64 @@ def core_replace_engine(m, find_text, replace_text, msg_id, chat_id, bot, loop, 
 
         def rename_single(node_info):
             nonlocal rename_count
-            if not ACTIVE_TASKS.get(task_key, True): return False
+            if not ACTIVE_TASKS.get(task_key, True):
+                return False
             n_id, n_data, curr_name = node_info
             new_name = curr_name.replace(find_text, replace_text) or "Unnamed_File"
-            
             while ACTIVE_TASKS.get(task_key, True):
                 try:
                     m.rename((n_id, n_data), new_name)
                     rename_count += 1
                     return True
                 except Exception:
-                    new_name = f"{random.randint(10,99)}_{new_name}"
-                    remaining = total_to_process - rename_count
-                    sleep_time = random.uniform(0.3, 0.8) if remaining > 15 else random.uniform(1.2, 2.5)
-                    time.sleep(sleep_time)
+                    new_name = f"{random.randint(100,999)}_{new_name}"
+                    time.sleep(1.5)
             return False
 
-        workers = 25 if total_to_process > 15 else 4
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as file_executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=40) as file_executor:
             futures = [file_executor.submit(rename_single, node) for node in matching_nodes]
             last_rep = 0
             for _ in concurrent.futures.as_completed(futures):
-                if not ACTIVE_TASKS.get(task_key, True): break
-                
-                remaining_live = total_to_process - rename_count
-                if remaining_live <= 15 and file_executor._max_workers > 4:
-                    file_executor._max_workers = 4
-
-                if rename_count % 40 == 0 and rename_count != last_rep:
+                if not ACTIVE_TASKS.get(task_key, True):
+                    break
+                # Live dynamic display configuration
+                if rename_count % 5 == 0 and rename_count != last_rep:
                     last_rep = rename_count
-
                     elapsed_time = time.time() - start_time
                     speed = rename_count / elapsed_time if elapsed_time > 0 else 0
-                    estimated_time = remaining_live / speed if speed > 0 else None
+                    remaining_files = total_to_process - rename_count
+                    estimated_time = remaining_files / speed if speed > 0 else None
 
                     p_bar = make_progress_bar(rename_count, total_to_process)
                     text = (
-                        "⚡ <b>Cloud Engine Active (25x)...</b>\n\n"
+                        f"⚡ <b>Premium Engine Executing Tasks...</b>\n\n"
                         f"📈 Progress: {p_bar}\n"
-                        f"✅ Processed Successfully: <code>{rename_count}/{total_to_process}</code> files\n"
+                        f"✅ Processed: <code>{rename_count}/{total_to_process}</code> files\n"
                         f"⏱️ Time Elapsed: <code>{format_time(elapsed_time)}</code>\n"
-                        f"⏳ Time Estimated: <code>{format_time(estimated_time)}</code>"
+                        f"⏳ Time Remaining: <code>{format_time(estimated_time)}</code>"
                     )
                     kb = [[InlineKeyboardButton("🛑 Terminate Action", callback_data=f"cancel_{task_key}")]]
                     asyncio.run_coroutine_threadsafe(bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML"), loop)
 
         if ACTIVE_TASKS.get(task_key, True):
-            asyncio.run_coroutine_threadsafe(bot.edit_message_text(
-                "<code>┌──────────────────────────┐\n"
-                "  🏁 MISSION COMPLETE\n"
-                "└──────────────────────────┘</code>\n\n"
-                f"✨ Processed Files: <code>{rename_count}</code>\n"
-                f"⏱️ Total Time Taken: <code>{format_time(time.time() - start_time)}</code>", 
-                chat_id, msg_id, parse_mode="HTML"
-            ), loop)
+            asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"🏁 <b>Mission Complete!</b>\n\n✨ Processed Files: <code>{rename_count}</code>\n⏱️ Total Time Taken: <code>{format_time(time.time() - start_time)}</code>", chat_id, msg_id, parse_mode="HTML"), loop)
     except Exception as e:
-        asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"❌ <b>Engine Interrupt Error:</b> {str(e)}", chat_id, msg_id, parse_mode="HTML"), loop)
+        asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"❌ <b>Error:</b> {str(e)}", chat_id, msg_id, parse_mode="HTML"), loop)
 
 async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'mega_instance' not in context.user_data:
-        await update.message.reply_text("❌ Pehle <code>/login</code> command se login karein!", parse_mode="HTML")
+        await update.message.reply_text("❌ Login required via <code>/login</code>!", parse_mode="HTML")
         return
 
     if not context.args or len(context.args) < 2:
-        await update.message.reply_text("⚠️ <b>Format:</b> <code>/replace old_text new_text</code>", parse_mode="HTML")
+        await update.message.reply_text("⚠️ Format: <code>/replace old_text new_text</code>", parse_mode="HTML")
         return
 
     find_text = str(context.args[0])
     replace_text = "" if str(context.args[1]).lower() == "blank" else str(context.args[1])
     m = context.user_data['mega_instance']
 
-    progress_msg = await update.message.reply_text("🌀 <b>Initializing Premium Replacer Sub-Routine Pipeline...</b>", parse_mode="HTML")
+    progress_msg = await update.message.reply_text("🌀 <b>Initializing Progress Engine Subroutine...</b>", parse_mode="HTML")
 
     loop = asyncio.get_running_loop()
     bot = context.bot
@@ -365,6 +361,7 @@ async def replace_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     loop.run_in_executor(GLOBAL_EXECUTOR, core_replace_engine, m, find_text, replace_text, progress_msg.message_id, chat_id, bot, loop, task_key)
 
+# --- CORE PARALLEL FULL OVERWRITE ENGINE PIPELINE ---
 def core_fullrename_engine(m, target_name, msg_id, chat_id, bot, loop, task_key):
     try:
         start_time = time.time()
@@ -376,7 +373,7 @@ def core_fullrename_engine(m, target_name, msg_id, chat_id, bot, loop, task_key)
         ]
 
         if not all_files:
-            asyncio.run_coroutine_threadsafe(bot.edit_message_text("❌ <b>Drive empty!</b>", chat_id, msg_id, parse_mode="HTML"), loop)
+            asyncio.run_coroutine_threadsafe(bot.edit_message_text("❌ Drive empty!", chat_id, msg_id, parse_mode="HTML"), loop)
             return
 
         rename_count = 0
@@ -385,7 +382,8 @@ def core_fullrename_engine(m, target_name, msg_id, chat_id, bot, loop, task_key)
 
         def rename_absolute(node_info):
             nonlocal rename_count
-            if not ACTIVE_TASKS.get(task_key, True): return False
+            if not ACTIVE_TASKS.get(task_key, True):
+                return False
             n_id, n_data, curr_name, s_num = node_info
             parts = curr_name.split('.')
             ext = parts[-1] if len(parts) > 1 else ""
@@ -397,63 +395,49 @@ def core_fullrename_engine(m, target_name, msg_id, chat_id, bot, loop, task_key)
                     rename_count += 1
                     return True
                 except Exception:
-                    new_name = f"{target_name}_{s_num}_{random.randint(10,99)}.{ext}" if ext else f"{target_name}_{s_num}_{random.randint(10,99)}"
-                    remaining = total_to_process - rename_count
-                    sleep_time = random.uniform(0.3, 0.8) if remaining > 15 else random.uniform(1.2, 2.5)
-                    time.sleep(sleep_time)
+                    new_name = f"{target_name}_{s_num}_{random.randint(100,999)}.{ext}" if ext else f"{target_name}_{s_num}_{random.randint(100,999)}"
+                    time.sleep(1.5)
             return False
 
-        workers = 25 if total_to_process > 15 else 4
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as file_executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=40) as file_executor:
             futures = [file_executor.submit(rename_absolute, node) for node in indexed_nodes]
             last_rep = 0
             for _ in concurrent.futures.as_completed(futures):
-                if not ACTIVE_TASKS.get(task_key, True): break
-                
-                remaining_live = total_to_process - rename_count
-                if remaining_live <= 15 and file_executor._max_workers > 4:
-                    file_executor._max_workers = 4
-
-                if rename_count % 40 == 0 and rename_count != last_rep:
+                if not ACTIVE_TASKS.get(task_key, True):
+                    break
+                if rename_count % 5 == 0 and rename_count != last_rep:
                     last_rep = rename_count
-
                     elapsed_time = time.time() - start_time
                     speed = rename_count / elapsed_time if elapsed_time > 0 else 0
-                    estimated_time = remaining_live / speed if speed > 0 else None
+                    remaining_files = total_to_process - rename_count
+                    estimated_time = remaining_files / speed if speed > 0 else None
 
                     p_bar = make_progress_bar(rename_count, total_to_process)
                     text = (
-                        "⚡ <b>Bulk System Overwriting Names...</b>\n\n"
+                        f"⚡ <b>Bulk System Overwriting Names...</b>\n\n"
                         f"📈 Progress: {p_bar}\n"
                         f"✅ Overwritten: <code>{rename_count}/{total_to_process}</code> files\n"
                         f"⏱️ Time Elapsed: <code>{format_time(elapsed_time)}</code>\n"
-                        f"⏳ Time Estimated: <code>{format_time(estimated_time)}</code>"
+                        f"⏳ Time Remaining: <code>{format_time(estimated_time)}</code>"
                     )
                     kb = [[InlineKeyboardButton("🛑 Terminate Action", callback_data=f"cancel_{task_key}")]]
                     asyncio.run_coroutine_threadsafe(bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML"), loop)
 
         if ACTIVE_TASKS.get(task_key, True):
-            asyncio.run_coroutine_threadsafe(bot.edit_message_text(
-                "<code>┌──────────────────────────┐\n"
-                "  🏁 FULL OVERWRITE FINISHED\n"
-                "└──────────────────────────┘</code>\n\n"
-                f"✨ Total Handled: <code>{rename_count}</code> nodes.\n"
-                f"⏱️ Total Time Taken: <code>{format_time(time.time() - start_time)}</code>", 
-                chat_id, msg_id, parse_mode="HTML"
-            ), loop)
+            asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"🏁 <b>Full Overwrite Finished Successfully!</b>\n\n✨ Total Handled: <code>{rename_count}</code> nodes.\n⏱️ Total Time Taken: <code>{format_time(time.time() - start_time)}</code>", chat_id, msg_id, parse_mode="HTML"), loop)
     except Exception as e:
-        asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"❌ <b>Error:</b> {str(e)}", chat_id, msg_id, parse_mode="HTML"), loop)
+        asyncio.run_coroutine_threadsafe(bot.edit_message_text(f"❌ Error: {str(e)}", chat_id, msg_id, parse_mode="HTML"), loop)
 
 async def fullrename_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'mega_instance' not in context.user_data:
-        await update.message.reply_text("❌ Pehle <code>/login</code> command se login karein!", parse_mode="HTML")
+        await update.message.reply_text("❌ Login required via <code>/login</code>!", parse_mode="HTML")
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ <b>Format:</b> <code>/fullrename naya_naam</code>", parse_mode="HTML")
+        await update.message.reply_text("⚠️ Format: <code>/fullrename naya_naam</code>", parse_mode="HTML")
         return
 
-    target_name = " ".join(context.args).strip()
+    target_exact_name = " ".join(context.args).strip()
     m = context.user_data['mega_instance']
 
     progress_msg = await update.message.reply_text("🌀 <b>Initializing Absolute Overwrite Engine Matrix...</b>", parse_mode="HTML")
@@ -464,7 +448,7 @@ async def fullrename_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     task_key = f"{chat_id}_{random.randint(1000,9999)}"
     ACTIVE_TASKS[task_key] = True
 
-    loop.run_in_executor(GLOBAL_EXECUTOR, core_fullrename_engine, m, target_name, progress_msg.message_id, chat_id, bot, loop, task_key)
+    loop.run_in_executor(GLOBAL_EXECUTOR, core_fullrename_engine, m, target_exact_name, progress_msg.message_id, chat_id, bot, loop, task_key)
 
 async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -472,17 +456,14 @@ async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ <b>Login setup ya operational cache cancel kar diya gaya hai.</b>", parse_mode="HTML")
+    await update.message.reply_text("❌ Cancelled.", parse_mode="HTML")
     return ConversationHandler.END
 
-def main():
+# --- APPLICATION RUN ENGINE MAIN COROUTINE ---
+async def main_async():
     if BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE" or not BOT_TOKEN:
-        print("[!] ERROR: BOT_TOKEN is missing or not set!")
+        print("[!] ERROR: BOT_TOKEN is missing!")
         sys.exit(1)
-
-    # Start FIXED HTTP Web Server 
-    server_thread = threading.Thread(target=run_health_server, daemon=True)
-    server_thread.start()
 
     custom_request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
     app = Application.builder().token(BOT_TOKEN).request(custom_request).post_init(post_init).build()
@@ -505,8 +486,18 @@ def main():
     app.add_handler(CommandHandler('broadcast', broadcast_command, block=False))
     app.add_handler(CallbackQueryHandler(cancel_callback_handler, block=False))
 
-    print("[+] Render Live Engine Starting...")
-    app.run_polling()
+    # Async Loop integration: Dono Web server aur bot polling saath chalenge
+    await app.initialize()
+    await app.start()
+    
+    # Run server task background and polling loop together
+    await asyncio.gather(
+        start_web_server(),
+        app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    )
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n[-] Engine Shutdown complete.")
